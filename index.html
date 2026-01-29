@@ -506,27 +506,40 @@
 
                 const data = await response.json();
 
-                if (!data.data || data.data.length === 0) {
+                if (!data) {
+                    throw new Error('No data returned from API');
+                }
+
+                // strapi-matic returns an event with markets array
+                let marketData = null;
+                
+                // If data is an event object with markets array
+                if (data.markets && Array.isArray(data.markets)) {
+                    // Use the first market from the event
+                    marketData = data.markets[0];
+                    market.title = data.title || market.slug;
+                } else {
                     throw new Error('Market not found');
                 }
 
-                const marketData = data.data[0];
-                market.title = marketData.title || market.slug;
+                if (!marketData) {
+                    throw new Error('Market not found');
+                }
 
                 // Extract YES and NO prices from outcomes
-                if (marketData.outcomes && marketData.outcomes.length >= 2) {
-                    // Find YES and NO outcomes
-                    const yesOutcome = marketData.outcomes.find(o => o.name === 'Yes');
-                    const noOutcome = marketData.outcomes.find(o => o.name === 'No');
-
-                    if (yesOutcome && noOutcome) {
-                        market.yesPrice = parseFloat(yesOutcome.price) || 0;
-                        market.noPrice = parseFloat(noOutcome.price) || 0;
+                if (marketData.outcomePrices) {
+                    const prices = typeof marketData.outcomePrices === 'string' 
+                        ? JSON.parse(marketData.outcomePrices) 
+                        : marketData.outcomePrices;
+                    
+                    if (Array.isArray(prices) && prices.length >= 2) {
+                        market.yesPrice = parseFloat(prices[0]) || 0;
+                        market.noPrice = parseFloat(prices[1]) || 0;
                     } else {
-                        // Fallback: assume first is YES, second is NO
-                        market.yesPrice = parseFloat(marketData.outcomes[0].price) || 0;
-                        market.noPrice = parseFloat(marketData.outcomes[1].price) || 0;
+                        throw new Error('Invalid price data');
                     }
+                } else {
+                    throw new Error('Price data not available');
                 }
 
                 market.lastUpdated = new Date();

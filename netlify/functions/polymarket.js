@@ -1,6 +1,6 @@
 // netlify/functions/polymarket.js
-// This serverless function proxies requests to Polymarket's Gamma API
-// It runs on Netlify's backend and bypasses CORS issues completely
+// This serverless function proxies requests to Polymarket's API
+// Uses the current strapi-matic endpoint (gamma-api is deprecated)
 
 export default async (request) => {
   // Only allow GET requests
@@ -26,17 +26,28 @@ export default async (request) => {
       );
     }
 
-    // Make the request to Polymarket's Gamma API from the backend
-    // (no CORS issues here because it's server-to-server)
-    const polymarketUrl = `https://gamma-api.polymarket.com/markets?slug=${encodeURIComponent(
+    // Use the current strapi-matic endpoint (gamma-api is deprecated)
+    // This returns events with their markets
+    const polymarketUrl = `https://strapi-matic.poly.market/events?slug=${encodeURIComponent(
       slug
     )}`;
 
     const response = await fetch(polymarketUrl);
     const data = await response.json();
 
+    // strapi returns an array, we'll return the first event if it exists
+    if (!data || data.length === 0) {
+      return new Response(
+        JSON.stringify({ error: "Market not found", data: [] }),
+        {
+          status: 404,
+          headers: { "Content-Type": "application/json" },
+        }
+      );
+    }
+
     // Return the data with proper CORS headers
-    return new Response(JSON.stringify(data), {
+    return new Response(JSON.stringify(data[0]), {
       status: 200,
       headers: {
         "Content-Type": "application/json",
