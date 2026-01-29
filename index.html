@@ -448,10 +448,145 @@
             const slug = input.value.trim();
 
             if (!slug) {
-                alert('Please enter a market slug');
+                alert('Please enter a market or event slug');
                 return;
             }
 
+            // First, try to fetch as an event to see if it has multiple markets
+            checkIfEventAndShowMarkets(slug);
+            input.value = '';
+        }
+
+        // Check if slug is an event with multiple markets
+        async function checkIfEventAndShowMarkets(slug) {
+            try {
+                const response = await fetch(
+                    `${CONFIG.API_ENDPOINT}?slug=${encodeURIComponent(slug)}`
+                );
+
+                if (!response.ok) {
+                    alert('Market/event not found');
+                    return;
+                }
+
+                const responseData = await response.json();
+                const data = responseData.data || responseData;
+
+                // Check if it's an event with multiple markets
+                if (Array.isArray(data) && data.length > 0) {
+                    const eventData = data[0];
+                    
+                    // If it has a markets array with multiple items, show selection UI
+                    if (eventData.markets && Array.isArray(eventData.markets) && eventData.markets.length > 1) {
+                        showMarketSelector(eventData);
+                        return;
+                    } else if (eventData.markets && eventData.markets.length === 1) {
+                        // Only one market, add it directly
+                        addMarketToList(eventData.markets[0].slug);
+                        return;
+                    }
+                }
+
+                // If we get here, it's a binary market (not an event), add it directly
+                addMarketToList(slug);
+            } catch (error) {
+                console.error('Error checking if event:', error);
+                // If there's an error, assume it's a binary market and try to add it
+                addMarketToList(slug);
+            }
+        }
+
+        // Show a modal to select which market from an event
+        function showMarketSelector(eventData) {
+            const markets = eventData.markets || [];
+            
+            // Create a simple popup menu
+            const marketList = markets
+                .map(m => `<button class="market-option-btn" data-slug="${m.slug}">${m.title}</button>`)
+                .join('');
+
+            const modal = document.createElement('div');
+            modal.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0,0,0,0.7);
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                z-index: 10000;
+            `;
+
+            modal.innerHTML = `
+                <div style="
+                    background: var(--bg-card);
+                    border: 1px solid var(--border);
+                    border-radius: 12px;
+                    padding: 24px;
+                    max-width: 400px;
+                    max-height: 80vh;
+                    overflow-y: auto;
+                ">
+                    <h2 style="margin-bottom: 16px; font-size: 18px;">Select a Market</h2>
+                    <p style="color: var(--text-secondary); font-size: 14px; margin-bottom: 20px;">
+                        "${eventData.title}" has ${markets.length} markets. Choose one to track:
+                    </p>
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        ${marketList}
+                    </div>
+                    <button id="cancelBtn" style="
+                        width: 100%;
+                        margin-top: 16px;
+                        padding: 10px;
+                        background: var(--border);
+                        color: var(--text-primary);
+                        border: none;
+                        border-radius: 6px;
+                        cursor: pointer;
+                    ">Cancel</button>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+
+            // Add event listeners
+            modal.querySelectorAll('.market-option-btn').forEach(btn => {
+                btn.style.cssText = `
+                    padding: 12px;
+                    background: var(--primary);
+                    color: white;
+                    border: none;
+                    border-radius: 6px;
+                    cursor: pointer;
+                    text-align: left;
+                    transition: background 0.2s;
+                    font-size: 14px;
+                `;
+                btn.addEventListener('mouseover', () => btn.style.background = 'var(--primary-dark)');
+                btn.addEventListener('mouseout', () => btn.style.background = 'var(--primary)');
+                btn.addEventListener('click', () => {
+                    const marketSlug = btn.dataset.slug;
+                    modal.remove();
+                    addMarketToList(marketSlug);
+                });
+            });
+
+            document.getElementById('cancelBtn').addEventListener('click', () => {
+                modal.remove();
+            });
+
+            // Close on background click
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) {
+                    modal.remove();
+                }
+            });
+        }
+
+        // Add a market to the list
+        function addMarketToList(slug) {
             if (markets.some(m => m.slug === slug)) {
                 alert('This market is already being tracked');
                 return;
@@ -471,7 +606,6 @@
             markets.push(market);
             saveMarkets();
             renderMarkets();
-            input.value = '';
             
             // Fetch data immediately
             updateMarket(market.id);
@@ -505,21 +639,32 @@
 
                 const responseData = await response.json();
                 
-                console.log("Full response:", responseData);
+                console.log("=== FULL RESPONSE ===");
+                console.log(JSON.stringify(responseData, null, 2));
+                console.log("=== END RESPONSE ===");
 
-                // Handle the wrapper response from our function
+                // Extract the actual data
                 const data = responseData.data || responseData;
                 const source = responseData.source || 'unknown';
 
-                console.log(`Using ${source} source:`, data);
+                console.log(`Source: ${source}`);
+                console.log("Data to parse:", data);
 
                 if (!data) {
                     throw new Error('No data returned from API');
                 }
 
                 // Handle strapi format (array of events)
-                if (Array.isArray(data) && data.length > 0) {
+                if (Array.isArray(data)) {
+                    console.log("Response is an array with", data.length, "items");
+                    
+                    if (data.length === 0) {
+                        throw new Error('Market not found (empty array)');
+                    }
+                    
                     const eventData = data[0];
+                    console.log("First item:", eventData);
+                    
                     if (eventData.title) market.title = eventData.title;
                     
                     if (eventData.outcomePrices) {
@@ -527,32 +672,50 @@
                             ? JSON.parse(eventData.outcomePrices)
                             : eventData.outcomePrices;
                         
+                        console.log("Parsed prices:", prices);
+                        
                         if (Array.isArray(prices) && prices.length >= 2) {
                             market.yesPrice = Math.max(0, Math.min(1, parseFloat(prices[0]) || 0));
                             market.noPrice = Math.max(0, Math.min(1, parseFloat(prices[1]) || 0));
                         } else {
-                            throw new Error('Invalid price format');
+                            throw new Error('Invalid price format: ' + JSON.stringify(prices));
                         }
                     } else {
-                        throw new Error('No price data in response');
+                        throw new Error('No outcomePrices field. Available fields: ' + Object.keys(eventData).join(', '));
                     }
                 }
                 // Handle gamma-api format (object with data array)
-                else if (data.data && Array.isArray(data.data) && data.data.length > 0) {
+                else if (data.data && Array.isArray(data.data)) {
+                    console.log("Response has data.data array with", data.data.length, "items");
+                    
+                    if (data.data.length === 0) {
+                        throw new Error('Market not found (empty data array)');
+                    }
+                    
                     const marketData = data.data[0];
+                    console.log("First market:", marketData);
+                    
                     market.title = marketData.title || market.slug;
 
-                    if (marketData.outcomes && marketData.outcomes.length >= 2) {
-                        const yesOutcome = marketData.outcomes.find(o => o.name === 'Yes') || marketData.outcomes[0];
-                        const noOutcome = marketData.outcomes.find(o => o.name === 'No') || marketData.outcomes[1];
+                    if (marketData.outcomes && Array.isArray(marketData.outcomes)) {
+                        console.log("Found outcomes array with", marketData.outcomes.length, "items");
+                        
+                        if (marketData.outcomes.length >= 2) {
+                            const yesOutcome = marketData.outcomes.find(o => o.name === 'Yes') || marketData.outcomes[0];
+                            const noOutcome = marketData.outcomes.find(o => o.name === 'No') || marketData.outcomes[1];
 
-                        market.yesPrice = Math.max(0, Math.min(1, parseFloat(yesOutcome.price) || 0));
-                        market.noPrice = Math.max(0, Math.min(1, parseFloat(noOutcome.price) || 0));
+                            market.yesPrice = Math.max(0, Math.min(1, parseFloat(yesOutcome.price) || 0));
+                            market.noPrice = Math.max(0, Math.min(1, parseFloat(noOutcome.price) || 0));
+                        } else {
+                            throw new Error('Not enough outcomes');
+                        }
                     } else {
-                        throw new Error('No outcomes in response');
+                        throw new Error('No outcomes field. Available fields: ' + Object.keys(marketData).join(', '));
                     }
                 } else {
-                    throw new Error('Unexpected response format');
+                    console.log("Data type:", typeof data);
+                    console.log("Data keys:", data ? Object.keys(data).join(', ') : 'null');
+                    throw new Error('Unexpected response format. Data structure: ' + JSON.stringify(data).substring(0, 200));
                 }
 
                 market.lastUpdated = new Date();
