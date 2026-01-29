@@ -82,6 +82,17 @@
             min-width: 20px;
             text-align: right;
             flex-shrink: 0;
+            text-shadow: 0 0 8px rgba(0, 102, 255, 0.5);
+        }
+
+        .market-price.updating {
+            animation: priceUpdate 0.6s ease-in-out;
+        }
+
+        @keyframes priceUpdate {
+            0% { opacity: 1; }
+            50% { opacity: 0.3; }
+            100% { opacity: 1; }
         }
 
         .market-slug {
@@ -325,7 +336,7 @@
                 btn.addEventListener('click', () => {
                     const marketSlug = btn.dataset.slug;
                     modal.remove();
-                    addMarketToList(marketSlug);
+                    showCustomNamePrompt(marketSlug);
                 });
             });
 
@@ -341,8 +352,16 @@
             });
         }
 
+        // Show prompt for custom name
+        function showCustomNamePrompt(slug) {
+            const customName = prompt('Enter a custom name for this market (or leave blank for slug):', slug);
+            if (customName !== null) {
+                addMarketToList(slug, customName || slug);
+            }
+        }
+
         // Add a market to the list
-        function addMarketToList(slug) {
+        function addMarketToList(slug, customName = null) {
             if (markets.some(m => m.slug === slug)) {
                 alert('This market is already being tracked');
                 return;
@@ -351,7 +370,7 @@
             const market = {
                 id: Date.now().toString(),
                 slug: slug,
-                title: slug,
+                displayName: customName || slug,
                 yesPrice: null,
                 noPrice: null,
                 lastUpdated: null,
@@ -483,6 +502,17 @@
             } finally {
                 market.loading = false;
                 renderMarkets();
+                
+                // Trigger fade animation on the price
+                setTimeout(() => {
+                    const priceElement = document.querySelector(`[data-id="${market.id}"] .market-price`);
+                    if (priceElement) {
+                        priceElement.classList.add('updating');
+                        setTimeout(() => {
+                            priceElement.classList.remove('updating');
+                        }, 600);
+                    }
+                }, 0);
             }
         }
 
@@ -507,7 +537,8 @@
         function saveMarkets() {
             const toSave = markets.map(m => ({
                 slug: m.slug,
-                id: m.id
+                id: m.id,
+                displayName: m.displayName
             }));
             localStorage.setItem(CONFIG.STORAGE_KEY, JSON.stringify(toSave));
         }
@@ -520,7 +551,7 @@
                     markets = parsed.map(m => ({
                         id: m.id,
                         slug: m.slug,
-                        title: m.slug,
+                        displayName: m.displayName || m.slug,
                         yesPrice: null,
                         noPrice: null,
                         lastUpdated: null,
@@ -555,13 +586,13 @@
         }
 
         function renderMarketRow(market) {
-            const { id, slug, yesPrice, loading, error } = market;
+            const { id, slug, displayName, yesPrice, loading, error } = market;
 
             if (error) {
                 return `
-                    <div class="market-row error">
+                    <div class="market-row error" data-id="${id}">
                         <div class="market-price">!</div>
-                        <div class="market-slug">${slug}</div>
+                        <div class="market-slug" title="${displayName}">${displayName}</div>
                         <button class="remove-btn" data-id="${id}">×</button>
                     </div>
                 `;
@@ -569,18 +600,18 @@
 
             if (loading || yesPrice === null) {
                 return `
-                    <div class="market-row loading">
+                    <div class="market-row loading" data-id="${id}">
                         <div class="market-price">-</div>
-                        <div class="market-slug">${slug}</div>
+                        <div class="market-slug" title="${displayName}">${displayName}</div>
                         <button class="remove-btn" data-id="${id}">×</button>
                     </div>
                 `;
             }
 
             return `
-                <div class="market-row">
+                <div class="market-row" data-id="${id}">
                     <div class="market-price">${(yesPrice * 100).toFixed(0)}</div>
-                    <div class="market-slug">${slug}</div>
+                    <div class="market-slug" title="${displayName}">${displayName}</div>
                     <button class="remove-btn" data-id="${id}">×</button>
                 </div>
             `;
