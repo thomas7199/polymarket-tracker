@@ -248,18 +248,18 @@
                         showMarketSelector(eventData);
                         return;
                     } else if (eventData.markets && eventData.markets.length === 1) {
-                        // Only one market, add it directly
-                        addMarketToList(eventData.markets[0].slug);
+                        // Only one market, ask for custom name
+                        showCustomNamePrompt(eventData.markets[0].slug);
                         return;
                     }
                 }
 
-                // If we get here, it's a binary market (not an event), add it directly
-                addMarketToList(slug);
+                // If we get here, it's a binary market (not an event), ask for custom name
+                showCustomNamePrompt(slug);
             } catch (error) {
                 console.error('Error checking if event:', error);
-                // If there's an error, assume it's a binary market and try to add it
-                addMarketToList(slug);
+                // If there's an error, assume it's a binary market and ask for custom name
+                showCustomNamePrompt(slug);
             }
         }
 
@@ -354,10 +354,14 @@
 
         // Show prompt for custom name
         function showCustomNamePrompt(slug) {
-            const customName = prompt('Enter a custom name for this market (or leave blank for slug):', slug);
-            if (customName !== null) {
-                addMarketToList(slug, customName || slug);
+            const customName = prompt('Custom name for this market:', slug);
+            if (customName !== null && customName.trim() !== '') {
+                addMarketToList(slug, customName.trim());
+            } else if (customName !== null) {
+                // User clicked OK but left it blank, use slug
+                addMarketToList(slug, slug);
             }
+            // If user clicked Cancel (null), do nothing
         }
 
         // Add a market to the list
