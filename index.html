@@ -495,7 +495,6 @@
 
             try {
                 // Fetch market data through our Netlify serverless function
-                // This avoids CORS issues by proxying through our own backend
                 const response = await fetch(
                     `${CONFIG.API_ENDPOINT}?slug=${encodeURIComponent(market.slug)}`
                 );
@@ -504,42 +503,56 @@
                     throw new Error(`API error: ${response.status}`);
                 }
 
-                const data = await response.json();
+                const responseData = await response.json();
+                
+                console.log("Full response:", responseData);
+
+                // Handle the wrapper response from our function
+                const data = responseData.data || responseData;
+                const source = responseData.source || 'unknown';
+
+                console.log(`Using ${source} source:`, data);
 
                 if (!data) {
                     throw new Error('No data returned from API');
                 }
 
-                // strapi-matic returns an event with markets array
-                let marketData = null;
-                
-                // If data is an event object with markets array
-                if (data.markets && Array.isArray(data.markets)) {
-                    // Use the first market from the event
-                    marketData = data.markets[0];
-                    market.title = data.title || market.slug;
-                } else {
-                    throw new Error('Market not found');
-                }
-
-                if (!marketData) {
-                    throw new Error('Market not found');
-                }
-
-                // Extract YES and NO prices from outcomes
-                if (marketData.outcomePrices) {
-                    const prices = typeof marketData.outcomePrices === 'string' 
-                        ? JSON.parse(marketData.outcomePrices) 
-                        : marketData.outcomePrices;
+                // Handle strapi format (array of events)
+                if (Array.isArray(data) && data.length > 0) {
+                    const eventData = data[0];
+                    if (eventData.title) market.title = eventData.title;
                     
-                    if (Array.isArray(prices) && prices.length >= 2) {
-                        market.yesPrice = parseFloat(prices[0]) || 0;
-                        market.noPrice = parseFloat(prices[1]) || 0;
+                    if (eventData.outcomePrices) {
+                        const prices = typeof eventData.outcomePrices === 'string'
+                            ? JSON.parse(eventData.outcomePrices)
+                            : eventData.outcomePrices;
+                        
+                        if (Array.isArray(prices) && prices.length >= 2) {
+                            market.yesPrice = Math.max(0, Math.min(1, parseFloat(prices[0]) || 0));
+                            market.noPrice = Math.max(0, Math.min(1, parseFloat(prices[1]) || 0));
+                        } else {
+                            throw new Error('Invalid price format');
+                        }
                     } else {
-                        throw new Error('Invalid price data');
+                        throw new Error('No price data in response');
+                    }
+                }
+                // Handle gamma-api format (object with data array)
+                else if (data.data && Array.isArray(data.data) && data.data.length > 0) {
+                    const marketData = data.data[0];
+                    market.title = marketData.title || market.slug;
+
+                    if (marketData.outcomes && marketData.outcomes.length >= 2) {
+                        const yesOutcome = marketData.outcomes.find(o => o.name === 'Yes') || marketData.outcomes[0];
+                        const noOutcome = marketData.outcomes.find(o => o.name === 'No') || marketData.outcomes[1];
+
+                        market.yesPrice = Math.max(0, Math.min(1, parseFloat(yesOutcome.price) || 0));
+                        market.noPrice = Math.max(0, Math.min(1, parseFloat(noOutcome.price) || 0));
+                    } else {
+                        throw new Error('No outcomes in response');
                     }
                 } else {
-                    throw new Error('Price data not available');
+                    throw new Error('Unexpected response format');
                 }
 
                 market.lastUpdated = new Date();

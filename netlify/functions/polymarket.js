@@ -1,9 +1,7 @@
 // netlify/functions/polymarket.js
 // This serverless function proxies requests to Polymarket's API
-// Uses the current strapi-matic endpoint (gamma-api is deprecated)
 
 export default async (request) => {
-  // Only allow GET requests
   if (request.method !== "GET") {
     return new Response(JSON.stringify({ error: "Method not allowed" }), {
       status: 405,
@@ -12,57 +10,49 @@ export default async (request) => {
   }
 
   try {
-    // Extract the market slug from the query parameter
     const url = new URL(request.url);
     const slug = url.searchParams.get("slug");
 
     if (!slug) {
       return new Response(
         JSON.stringify({ error: "Market slug is required" }),
-        {
-          status: 400,
-          headers: { "Content-Type": "application/json" },
-        }
+        { status: 400, headers: { "Content-Type": "application/json" } }
       );
     }
 
-    // Use the current strapi-matic endpoint (gamma-api is deprecated)
-    // This returns events with their markets
-    const polymarketUrl = `https://strapi-matic.poly.market/events?slug=${encodeURIComponent(
-      slug
-    )}`;
+    // Try strapi-matic endpoint
+    const polymarketUrl = `https://strapi-matic.poly.market/events?slug=${encodeURIComponent(slug)}`;
 
     const response = await fetch(polymarketUrl);
-    const data = await response.json();
-
-    // strapi returns an array, we'll return the first event if it exists
-    if (!data || data.length === 0) {
-      return new Response(
-        JSON.stringify({ error: "Market not found", data: [] }),
-        {
-          status: 404,
-          headers: { "Content-Type": "application/json" },
-        }
-      );
+    
+    // If strapi-matic fails, try gamma-api as fallback
+    if (!response.ok) {
+      const gammaUrl = `https://gamma-api.polymarket.com/markets?slug=${encodeURIComponent(slug)}`;
+      const gammaResponse = await fetch(gammaUrl);
+      const gammaData = await gammaResponse.json();
+      
+      return new Response(JSON.stringify({ source: "gamma", data: gammaData }), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/json",
+          "Access-Control-Allow-Origin": "*",
+        },
+      });
     }
 
-    // Return the data with proper CORS headers
-    return new Response(JSON.stringify(data[0]), {
+    const data = await response.json();
+
+    return new Response(JSON.stringify({ source: "strapi", data: data }), {
       status: 200,
       headers: {
         "Content-Type": "application/json",
         "Access-Control-Allow-Origin": "*",
-        "Access-Control-Allow-Methods": "GET, OPTIONS",
-        "Access-Control-Allow-Headers": "Content-Type",
       },
     });
   } catch (error) {
     return new Response(
-      JSON.stringify({ error: error.message }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      }
+      JSON.stringify({ error: error.message, stack: error.stack }),
+      { status: 500, headers: { "Content-Type": "application/json" } }
     );
   }
 };
