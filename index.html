@@ -562,6 +562,9 @@
                         error: null,
                         loading: true
                     }));
+                    
+                    // Fetch fresh data for all loaded markets
+                    markets.forEach(m => updateMarket(m.id));
                 }
             } catch (e) {
                 console.error('Error loading saved markets:', e);
