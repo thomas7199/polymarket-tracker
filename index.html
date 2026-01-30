@@ -202,11 +202,19 @@
             document.getElementById('marketInput').addEventListener('keypress', (e) => {
                 if (e.key === 'Enter') addMarket();
             });
-            document.getElementById('refreshBtn').addEventListener('click', refreshAllMarkets);
-            document.getElementById('refreshInterval').addEventListener('change', (e) => {
-                refreshInterval = parseInt(e.target.value);
-                restartAutoRefresh();
-            });
+            
+            const refreshBtn = document.getElementById('refreshBtn');
+            if (refreshBtn) {
+                refreshBtn.addEventListener('click', refreshAllMarkets);
+            }
+            
+            const refreshInterval = document.getElementById('refreshInterval');
+            if (refreshInterval) {
+                refreshInterval.addEventListener('change', (e) => {
+                    refreshInterval = parseInt(e.target.value);
+                    restartAutoRefresh();
+                });
+            }
         }
 
         // Add market
